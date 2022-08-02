@@ -11,11 +11,14 @@ import sys
 import csv
 from datetime import datetime, date, timedelta, timezone
 import os
+from pxc_jira import PRODUCT, EXPLORE, get_project_issues
 
 RESOLVED_COL = 'date'
 ISSUETYPE_COL = 'type'
 POINTS_COL = 'points'
 MOVING_AVG_INTERVAL = 28
+USAGE = '<csv-file>|product|explore [<jira-user> <jira-pwd> <start-date yyyy-mm-dd>]'
+PROJECTS = {'product': PRODUCT, 'explore': EXPLORE}
 
 
 def daterange(date_from, date_to):
@@ -145,6 +148,7 @@ def new_dist_values(key):
     return {key: [0, 0, 0]}
 
 
+# calculate the story points distribution
 def generate_distribution(report_values):
     dist = {}
     types = ['bug', 'task', 'story']
@@ -174,11 +178,25 @@ def read_rows(filename):
     return rows
 
 
+def aqcuire_rows(source):
+    if source in PROJECTS:
+        if len(sys.argv) < 5:
+            print(USAGE)
+            exit(1)
+        print('getting issues for project "{}" from {} for user {}'.format(PROJECTS[source], sys.argv[2], sys.argv[3]))
+        rows = get_project_issues(PROJECTS[source], sys.argv[2], sys.argv[3], sys.argv[4])
+    else:
+        print('using file {} as input'.format(source))
+        rows = read_rows(source)
+    return rows
+
+
 def run_calculations():
-    input_filename = sys.argv[1]
-    out_converted = os.path.splitext(input_filename)[0] + "_converted.csv"
-    out_distribution = os.path.splitext(input_filename)[0] + "_distribution.csv"
-    rows = read_rows(input_filename)
+    source = sys.argv[1]
+    rows = aqcuire_rows(source)
+    basename = source if source == EXPLORE or source == PRODUCT else os.path.splitext(source)[0]
+    out_converted = basename + '_converted.csv'
+    out_distribution = basename + "_distribution.csv"
     if len(rows) > 1:
         config = column_configuration(rows[0])
         print('detected columns: ', config)
@@ -206,7 +224,7 @@ def run_calculations():
 
 
 if __name__ == '__main__':
-    if len(sys.argv) != 2:
-        print('Missing parameter: input CSV file')
+    if len(sys.argv) < 2:
+        print(USAGE)
         exit(1)
     run_calculations()
