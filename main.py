@@ -1,4 +1,7 @@
-# The program takes a Jira issue export CSV file that must contain the following fields. The names must match exactly:
+# The program has two modes:
+# Mode 1; CSV file
+# ----------------
+# provide a Jira issue export CSV file that must contain the following fields. The names must match exactly:
 # - Resolved
 # - Custom field (Story Points)
 # - Issue Type
@@ -6,18 +9,23 @@
 # The output is two files where X stands for the base name of the input file:
 # X_converted.csv -> aggregated values (points, counts) per day; contains calculation of 28 day moving averages
 # X_distribution.csv -> aggregated story point distribution by issue type
+#
+# Mode 2; Jira direct access
+# --------------------------
+# Provide either "explore" or "product" instead of a filename and extra parameters for the JQL and login (see USAGE)
 
 import sys
 import csv
-from datetime import datetime, date, timedelta, timezone
+from datetime import datetime, timedelta
 import os
 from pxc_jira import PRODUCT, EXPLORE, get_project_issues
 
+
+USAGE = '<csv-file>|product|explore [<jira-user> <jira-pwd> <start-date yyyy-mm-dd>]'
 RESOLVED_COL = 'date'
 ISSUETYPE_COL = 'type'
 POINTS_COL = 'points'
 MOVING_AVG_INTERVAL = 28
-USAGE = '<csv-file>|product|explore [<jira-user> <jira-pwd> <start-date yyyy-mm-dd>]'
 PROJECTS = {'product': PRODUCT, 'explore': EXPLORE}
 
 
@@ -158,8 +166,6 @@ def generate_distribution(report_values):
             if p > 0:
                 dist.setdefault(p, [0, 0, 0])
                 dist[p][i] += 1
-                # print(dist[p])
-    # print(dist)
     return dist
 
 
@@ -178,13 +184,16 @@ def read_rows(filename):
     return rows
 
 
+# choose between Jira direct and CSV file source
+# the Jira results will look as if they came from a CSV file
 def aqcuire_rows(source):
     if source in PROJECTS:
         if len(sys.argv) < 5:
             print(USAGE)
             exit(1)
-        print('getting issues for project "{}" from {} for user {}'.format(PROJECTS[source], sys.argv[2], sys.argv[3]))
-        rows = get_project_issues(PROJECTS[source], sys.argv[2], sys.argv[3], sys.argv[4])
+        print('getting issues for project "{}" starting {} for user {}'.format(PROJECTS[source], sys.argv[2], sys.argv[3]))
+        print('ignore the warnings that come from the disabled certificate validation')
+        rows = [['Issue key', 'Issue id', 'Issue Type', 'Custom field (Story Points)', 'Resolved']] + get_project_issues(PROJECTS[source], sys.argv[2], sys.argv[3], sys.argv[4])
     else:
         print('using file {} as input'.format(source))
         rows = read_rows(source)
