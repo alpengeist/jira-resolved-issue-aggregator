@@ -1,19 +1,21 @@
-# The program has two modes:
 # Mode 1; CSV file
 # ----------------
-# provide a Jira issue e3815xport CSV file that must contain the following fields. The names must match exactly:
-# - Resolved
-# - Custom field (Story Points)
-# - Issue Type
+# Provide a Jira issue export CSV file that must contain the following fields. The names must match exactly:
+# "Resolved"
+# "Custom field (Story Points)"
+# "Issue Type"
 # The column position is detected automatically.
+# Look into pxc_jira.py for the JQL sample.
 # The output is two files where X stands for the base name of the input file:
 # X_converted.csv -> aggregated values (points, counts) per day; contains calculation of 28 day moving averages
 # X_distribution.csv -> aggregated story point distribution by issue type
 #
 # Mode 2; Jira direct access
 # --------------------------
-# Provide either "explore" or "product" instead of a filename and extra parameters for the JQL and login (see USAGE)
-# The end date is optional and defaults to today. The max date range is fixed to 18 months.
+# Instead of a file name provide either "explore" or "product" plus the login credentials (see USAGE).
+# The end date is optional and defaults to today. The max date range is fixed to 18 months, the rational being
+# to have an overview across all seasons in a year and some extra months. A longer period
+# is not useful as it does not contain actionable information.
 
 import sys
 import csv
