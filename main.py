@@ -1,7 +1,7 @@
 # The program has two modes:
 # Mode 1; CSV file
 # ----------------
-# provide a Jira issue export CSV file that must contain the following fields. The names must match exactly:
+# provide a Jira issue e3815xport CSV file that must contain the following fields. The names must match exactly:
 # - Resolved
 # - Custom field (Story Points)
 # - Issue Type
@@ -13,6 +13,7 @@
 # Mode 2; Jira direct access
 # --------------------------
 # Provide either "explore" or "product" instead of a filename and extra parameters for the JQL and login (see USAGE)
+# The end date is optional and defaults to today. The max date range is fixed to 18 months.
 
 import sys
 import csv
@@ -21,7 +22,7 @@ import os
 from pxc_jira import PRODUCT, EXPLORE, get_project_issues
 
 
-USAGE = '<csv-file>|product|explore [<jira-user> <jira-pwd> <start-date yyyy-mm-dd>]'
+USAGE = '<csv-file>|product|explore [<jira-user> <jira-pwd> [<end-date yyyy-mm-dd>]]'
 RESOLVED_COL = 'date'
 ISSUETYPE_COL = 'type'
 POINTS_COL = 'points'
@@ -50,7 +51,7 @@ def column_configuration(row):
 
 
 def get_statechange_date(row, config):
-    return datetime.strptime(row[config[RESOLVED_COL]], '%d.%m.%y %H:%M')
+    return datetime.strptime(row[config[RESOLVED_COL]], '%d.%m.%Y %H:%M')
 
 
 def get_issue_type(row, config):
@@ -188,12 +189,18 @@ def read_rows(filename):
 # the Jira results will look as if they came from a CSV file
 def aqcuire_rows(source):
     if source in PROJECTS:
-        if len(sys.argv) < 5:
+        end_date = datetime.today()
+        if len(sys.argv) < 4:
             print(USAGE)
             exit(1)
-        print('getting issues for project "{}" starting {} for user {}'.format(PROJECTS[source], sys.argv[2], sys.argv[3]))
+        arg_user = sys.argv[2]
+        arg_pwd = sys.argv[3]
+        if len(sys.argv) == 5:
+            end_date = datetime.strptime(sys.argv[4], '%Y-%m-%d')
+        print('getting issues for project "{}" with end date {} for user {}'.format(
+            PROJECTS[source], end_date, arg_user))
         print('ignore the warnings that come from the disabled certificate validation')
-        rows = [['Issue key', 'Issue id', 'Issue Type', 'Custom field (Story Points)', 'Resolved']] + get_project_issues(PROJECTS[source], sys.argv[2], sys.argv[3], sys.argv[4])
+        rows = [['Issue key', 'Issue id', 'Issue Type', 'Custom field (Story Points)', 'Resolved']] + get_project_issues(PROJECTS[source], arg_user, arg_pwd, end_date)
     else:
         print('using file {} as input'.format(source))
         rows = read_rows(source)
