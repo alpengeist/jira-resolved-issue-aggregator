@@ -14,7 +14,6 @@
 # --------------------------
 # Instead of a file name provide either "explore" or "product" plus the login credentials (see USAGE).
 # The end date is optional and defaults to today.
-#
 # The date range is limited to 1 1/2 years. A longer interval does not give more insight.
 import sys
 import csv
@@ -52,7 +51,7 @@ def column_configuration(row):
 
 
 def get_statechange_date(row, config):
-    return datetime.strptime(row[config[RESOLVED_COL]], '%d.%m.%Y %H:%M')
+    return datetime.strptime(row[config[RESOLVED_COL]], '%d.%m.%y %H:%M')
 
 
 def get_issue_type(row, config):

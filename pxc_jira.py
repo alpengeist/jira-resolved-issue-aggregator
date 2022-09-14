@@ -27,7 +27,7 @@ def format_query_date(date):
 
 
 def format_data_date(date):
-    return datetime.strftime(date, '%d.%m.%Y %H:%M')
+    return datetime.strftime(date, '%d.%m.%y %H:%M')
 
 
 def jql_query(project, end_date):
