@@ -13,10 +13,9 @@
 # Mode 2; Jira direct access
 # --------------------------
 # Instead of a file name provide either "explore" or "product" plus the login credentials (see USAGE).
-# The end date is optional and defaults to today. The max date range is fixed to 18 months, the rational being
-# to have an overview across all seasons in a year and some extra months. A longer period
-# is not useful as it does not contain actionable information.
-
+# The end date is optional and defaults to today.
+#
+# The date range is limited to 1 1/2 years. A longer interval does not give more insight.
 import sys
 import csv
 from datetime import datetime, timedelta
@@ -121,7 +120,8 @@ def serialize_day_values(val):
             val['story']['count'], val['story']['points']]
 
 
-# run a date loop across the report's time interval and fill in the collected day values
+# run a date loop across the report's time interval and fill in the collected day values;
+# dates that have no data default to 0 values
 def generate_timeseries(report_values, start_date, end_date):
     for d in daterange(start_date, end_date):
         key = day_key(d)
@@ -137,7 +137,7 @@ def calculate_pairwise_relations(pairs):
 # while generating a proper time series without holes
 def generate_rows(report_values, start_date, end_date):
     rowcount = 1
-    windows = [[], [], [], [], [], []]  # one window for each individual average value
+    windows = [[], [], [], [], [], []]  # one interval sliding window for each individual average value
     for d in generate_timeseries(report_values, start_date, end_date):
         # d is a sequence of values; the average's source values are from column 1 (=date) onwards
         avg = []
@@ -160,8 +160,9 @@ def new_dist_values(key):
 
 
 # calculate the story points distribution
+# The distribution has the points value on the horizontal axis and one associated value for each task type
 def generate_distribution(report_values):
-    dist = {}
+    dist = {}  # key = points counter, value = list of counters for each task type
     types = ['bug', 'task', 'story']
     for v in report_values:
         for i, t in enumerate(types):
@@ -188,7 +189,7 @@ def read_rows(filename):
 
 
 # choose between Jira direct and CSV file source
-# the Jira results will look as if they came from a CSV file
+# the Jira direct results will look as if they came from a Jira export CSV file
 def aqcuire_rows(source):
     if source in PROJECTS:
         end_date = datetime.today()
@@ -233,6 +234,8 @@ def run_calculations():
             print('writing ' + out_converted)
             wr = csv.writer(outfile)
             wr.writerow(csv_headline_conv())
+            # The end date is taken from the data, therefore the number of rows can vary. This has to be considered
+            # in Excel sheets that rely on a fixed range of cells.
             for d in generate_rows(report_values, get_start_date(rows, config), get_end_date(rows, config)):
                 # print(d)
                 wr.writerow(d)
