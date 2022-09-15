@@ -9,6 +9,7 @@
 # The output is two files where X stands for the base name of the input file:
 # X_converted.csv -> aggregated values (points, counts) per day; contains calculation of 28 day moving averages
 # X_distribution.csv -> aggregated story point distribution by issue type
+# X_biggies.csv -> list of issues with big points
 #
 # Jira direct access
 # --------------------------
@@ -22,13 +23,15 @@ from datetime import datetime, timedelta
 import os
 from pathlib import Path
 
-from pxc_jira import PROJECTS, get_project_issues
+from pxc_jira import PROJECTS, JIRA_URL, get_project_issues
 
 
 USAGE = '<csv-file>|product|explore|<Jira project name> [<jira-user> <jira-pwd> [<end-date yyyy-mm-dd>]]'
 RESOLVED_COL = 'date'
 ISSUETYPE_COL = 'type'
 POINTS_COL = 'points'
+KEY_COL = "key"
+POINTS_THRESHOLD = 5
 MOVING_AVG_INTERVAL = 28
 
 
@@ -49,7 +52,7 @@ def find_column(row, text):
 # This is a safety measure against any column order change or name change in the Jira report
 def column_configuration(row):
     return {RESOLVED_COL: find_column(row, 'Resolved'), ISSUETYPE_COL: find_column(row, 'Issue Type'),
-            POINTS_COL: find_column(row, 'Custom field (Story Points)')}
+            POINTS_COL: find_column(row, 'Custom field (Story Points)'), KEY_COL: find_column(row, 'Issue key')}
 
 
 # The time is rounded down to 0:0:0, we are only interested in the day.
@@ -59,6 +62,10 @@ def round_down_time(datet):
 
 def get_issue_type(row, config):
     return row[config[ISSUETYPE_COL]].lower()
+
+
+def get_issue_key(row, config):
+    return row[config[KEY_COL]]
 
 
 def get_points(row, config):
@@ -110,6 +117,20 @@ def process_rows(rows, config):
     for i in range(1, len(rows)):
         process_row(rows[i], report_values, config)
     return report_values
+
+
+# collect all issues whose points exceed the threshold
+def find_big_points(rows, config):
+    biggies = []
+    for i in range(1, len(rows)):
+        row = rows[i]
+        p = get_points(row, config)
+        if p > POINTS_THRESHOLD:
+            biggies.append({'date': day_key(get_statechange_date(row, config)),
+                            'type': get_issue_type(row, config),
+                            'points': p,
+                            'URL': get_issue_key(row, config)})
+    return biggies
 
 
 def csv_headline_conv():
@@ -186,16 +207,6 @@ def serialize_distribution(dist):
         yield [k] + dist[k]
 
 
-# read the input file into a sequence
-def read_rows(filename):
-    rows = []
-    with open(filename) as csvfile:
-        rd = csv.reader(csvfile, delimiter=',')
-        for row in rd:
-            rows.append(row)
-    return rows
-
-
 def determine_source(source):
     p = Path(source)
     if p.is_file():
@@ -209,7 +220,17 @@ def determine_source(source):
         return True, source
 
 
-# the Jira direct results will look as if they came from a Jira export CSV file
+# read a CSV export file
+def read_rows(filename):
+    rows = []
+    with open(filename) as csvfile:
+        rd = csv.reader(csvfile, delimiter=',')
+        for row in rd:
+            rows.append(row)
+    return rows
+
+
+# the Jira direct rows will look as if they came from a Jira export CSV file
 def jira_online(project):
     end_date = round_down_time(datetime.today())
     if len(sys.argv) < 4:
@@ -229,39 +250,59 @@ def run_calculations():
     is_project, mapped_project = determine_source(source)
     if is_project:
         rows = jira_online(mapped_project)
+        # get rid of blanks in the project name
         basename = source.replace(' ', '_')
     else:
         rows = read_rows(source)
         basename = os.path.splitext(source)[0]
 
-    out_converted = basename + '_converted.csv'
-    out_distribution = basename + "_distribution.csv"
     if len(rows) > 1:
         config = column_configuration(rows[0])
         print('detected columns: ', config)
+
+        out_converted = basename + '_converted.csv'
         report_values = process_rows(rows, config)
+        write_converted(report_values, rows, config, out_converted)
+
+        out_distribution = basename + "_distribution.csv"
         dist = generate_distribution(report_values)
+        write_distribution(dist, out_distribution)
 
-        with open(out_distribution, "w", newline='') as outfile:
-            print('writing ' + out_distribution)
-            wr = csv.writer(outfile)
-            wr.writerow(csv_headline_dist())
-            for d in serialize_distribution(dist):
-                # print(d)
-                wr.writerow(d)
-
-        with open(out_converted, "w", newline='') as outfile:
-            print('writing ' + out_converted)
-            wr = csv.writer(outfile)
-            wr.writerow(csv_headline_conv())
-            # The end date is taken from the data, therefore the number of rows can vary. This has to be considered
-            # in Excel sheets that rely on a fixed range of cells.
-            for d in generate_rows(report_values, get_start_date(rows, config), get_end_date(rows, config)):
-                # print(d)
-                wr.writerow(d)
+        out_biggies = basename + "_biggies.csv"
+        biggies = find_big_points(rows, config)
+        write_biggies(biggies, out_biggies)
     else:
         print('Input file has no data, exiting')
         exit(0)
+
+
+def write_converted(report_values, rows, config, out_converted):
+    with open(out_converted, "w", newline='') as outfile:
+        print('writing ' + out_converted)
+        wr = csv.writer(outfile)
+        wr.writerow(csv_headline_conv())
+        for d in generate_rows(report_values, get_start_date(rows, config), get_end_date(rows, config)):
+            # print(d)
+            wr.writerow(d)
+    return report_values
+
+
+def write_biggies(biggies, out_biggies):
+    with open(out_biggies, "w") as outfile:
+        print('writing ' + out_biggies)
+        outfile.write('date,type,points,URL\n')
+        for b in biggies:
+            outfile.write('{},{},{},{}/browse/{}\n'.format(b['date'], b['type'], b['points'], JIRA_URL, b['URL']))
+
+
+def write_distribution(dist, out_distribution):
+    with open(out_distribution, "w", newline='') as outfile:
+        print('writing ' + out_distribution)
+        wr = csv.writer(outfile)
+        wr.writerow(csv_headline_dist())
+        for d in serialize_distribution(dist):
+            # print(d)
+            wr.writerow(d)
 
 
 if __name__ == '__main__':

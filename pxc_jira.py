@@ -10,11 +10,12 @@ from datetime import datetime, timedelta
 PROJECTS = {'product': '[SCS] Product', 'explore': '[SCS] Explore'}
 POINTS = 'customfield_10106'
 MAX_DAYS = 555
+JIRA_URL = 'https://jira-web.europe.phoenixcontact.com'
 
 
 def get_session(credentials):
     # silly PxC certificate cannot be validated
-    return JIRA(options={'server': 'https://jira-web.europe.phoenixcontact.com', 'verify': False},
+    return JIRA(options={'server': JIRA_URL, 'verify': False},
                 basic_auth=credentials)
 
 
