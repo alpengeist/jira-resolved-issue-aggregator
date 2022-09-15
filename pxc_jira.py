@@ -6,10 +6,10 @@ import sys
 from jira import JIRA
 from datetime import datetime, timedelta
 
-EXPLORE = '[SCS] Explore'
-PRODUCT = '[SCS] Product'
+# project convenience shortcuts, avoids using blanks on the commandline
+PROJECTS = {'product': '[SCS] Product', 'explore': '[SCS] Explore'}
 POINTS = 'customfield_10106'
-MAX_DAYS = 365 + 365 / 2
+MAX_DAYS = 555
 
 
 def get_session(credentials):
@@ -19,7 +19,7 @@ def get_session(credentials):
 
 
 def calc_start_date(end_date):
-    return end_date - timedelta(days=MAX_DAYS)
+    return end_date - timedelta(days=MAX_DAYS-1)
 
 
 def format_query_date(date):
@@ -31,8 +31,11 @@ def format_data_date(date):
 
 
 def jql_query(project, end_date):
+    # The actual excluded end date for the query is the next date 00:00, otherwise Jira would not find anything
+    # from the specified end day.
+    actual_end = end_date + timedelta(days=1)
     q = ('project in ("' + project + '") AND issueType in (Story, Bug, Task)' +
-         ' AND resolved <= ' + format_query_date(end_date) +
+         ' AND resolved < ' + format_query_date(actual_end) +
          ' AND resolved >= ' + format_query_date(calc_start_date(end_date)) +
          ' AND resolution = Done ORDER BY resolved ASC')
     print(q)
@@ -46,6 +49,7 @@ def get_issues(session, project, end_date):
     query = jql_query(project, end_date)
     while True:
         issues = session.search_issues(query, fields=[POINTS, 'issuetype', 'resolutiondate'], startAt=start)
+        # print(issues)
         if len(issues) == 0:
             break
         else:
@@ -78,6 +82,4 @@ def get_project_issues(project, user, pwd, end_date):
 
 
 if __name__ == '__main__':
-    ROWS = get_project_issues(PRODUCT, sys.argv[1], sys.argv[2], datetime.now())
-    for r in ROWS:
-        print(r)
+    print("nix zu tun")

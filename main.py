@@ -1,33 +1,35 @@
-# Mode 1; CSV file
+# CSV file
 # ----------------
 # Provide a Jira issue export CSV file that must contain the following fields. The names must match exactly:
 # "Resolved"
 # "Custom field (Story Points)"
 # "Issue Type"
 # The column position is detected automatically.
-# Look into pxc_jira.py for the JQL sample.
+# Look into pxc_jira.py for the JQL expression.
 # The output is two files where X stands for the base name of the input file:
 # X_converted.csv -> aggregated values (points, counts) per day; contains calculation of 28 day moving averages
 # X_distribution.csv -> aggregated story point distribution by issue type
 #
-# Mode 2; Jira direct access
+# Jira direct access
 # --------------------------
-# Instead of a file name provide either "explore" or "product" plus the login credentials (see USAGE).
+# Instead of a file name provide either "explore" or "product" as project aliases or a Jira project name
+# plus the login credentials (see USAGE). The program will figure out by itself whether the parameter is a file.
 # The end date is optional and defaults to today.
-# The date range is limited to 1 1/2 years. A longer interval does not give more insight.
+# The date range is limited to 555 days (a little more than 1 1/2 years). A longer interval does not give more insight.
 import sys
 import csv
 from datetime import datetime, timedelta
 import os
-from pxc_jira import PRODUCT, EXPLORE, get_project_issues
+from pathlib import Path
+
+from pxc_jira import PROJECTS, get_project_issues
 
 
-USAGE = '<csv-file>|product|explore [<jira-user> <jira-pwd> [<end-date yyyy-mm-dd>]]'
+USAGE = '<csv-file>|product|explore|<Jira project name> [<jira-user> <jira-pwd> [<end-date yyyy-mm-dd>]]'
 RESOLVED_COL = 'date'
 ISSUETYPE_COL = 'type'
 POINTS_COL = 'points'
 MOVING_AVG_INTERVAL = 28
-PROJECTS = {'product': PRODUCT, 'explore': EXPLORE}
 
 
 def daterange(date_from, date_to):
@@ -50,8 +52,9 @@ def column_configuration(row):
             POINTS_COL: find_column(row, 'Custom field (Story Points)')}
 
 
-def get_statechange_date(row, config):
-    return datetime.strptime(row[config[RESOLVED_COL]], '%d.%m.%y %H:%M')
+# The time is rounded down to 0:0:0, we are only interested in the day.
+def round_down_time(datet):
+    return datet.replace(hour=0, minute=0, second=0, microsecond=0)
 
 
 def get_issue_type(row, config):
@@ -66,11 +69,17 @@ def day_key(d):
     return d.strftime('%d.%m.%Y')
 
 
+def get_statechange_date(row, config):
+    return round_down_time(datetime.strptime(row[config[RESOLVED_COL]], '%d.%m.%y %H:%M'))
+
+
+# get the date of the first data row; row 0 is the heading
 def get_start_date(rows, config):
     if len(rows) > 1:
         return get_statechange_date(rows[1], config)
 
 
+# get the date from the last data row
 def get_end_date(rows, config):
     if (len(rows)) > 1:
         return get_statechange_date(rows[-1], config)
@@ -187,32 +196,44 @@ def read_rows(filename):
     return rows
 
 
-# choose between Jira direct and CSV file source
-# the Jira direct results will look as if they came from a Jira export CSV file
-def aqcuire_rows(source):
-    if source in PROJECTS:
-        end_date = datetime.today()
-        if len(sys.argv) < 4:
-            print(USAGE)
-            exit(1)
-        arg_user = sys.argv[2]
-        arg_pwd = sys.argv[3]
-        if len(sys.argv) == 5:
-            end_date = datetime.strptime(sys.argv[4], '%Y-%m-%d')
-        print('getting issues for project "{}" with end date {} for user {}'.format(
-            PROJECTS[source], end_date, arg_user))
-        print('ignore the warnings that come from the disabled certificate validation')
-        rows = [['Issue key', 'Issue id', 'Issue Type', 'Custom field (Story Points)', 'Resolved']] + get_project_issues(PROJECTS[source], arg_user, arg_pwd, end_date)
-    else:
+def determine_source(source):
+    p = Path(source)
+    if p.is_file():
         print('using file {} as input'.format(source))
-        rows = read_rows(source)
-    return rows
+        return False, source
+    if source in PROJECTS:
+        print('identified project shortcut for "{}"'.format(source))
+        return True, PROJECTS[source]
+    else:
+        print('using {} as project name for Jira'.format(source))
+        return True, source
+
+
+# the Jira direct results will look as if they came from a Jira export CSV file
+def jira_online(project):
+    end_date = round_down_time(datetime.today())
+    if len(sys.argv) < 4:
+        print(USAGE)
+        exit(1)
+    arg_user = sys.argv[2]
+    arg_pwd = sys.argv[3]
+    if len(sys.argv) == 5:
+        end_date = datetime.strptime(sys.argv[4], '%Y-%m-%d')
+    print('getting issues for project "{}" with end date {} for user {}'.format(project, end_date, arg_user))
+    print('ignore the warnings that come from the disabled certificate validation')
+    return [['Issue key', 'Issue id', 'Issue Type', 'Custom field (Story Points)', 'Resolved']] + get_project_issues(project, arg_user, arg_pwd, end_date)
 
 
 def run_calculations():
     source = sys.argv[1]
-    rows = aqcuire_rows(source)
-    basename = source if source == EXPLORE or source == PRODUCT else os.path.splitext(source)[0]
+    is_project, mapped_project = determine_source(source)
+    if is_project:
+        rows = jira_online(mapped_project)
+        basename = source.replace(' ', '_')
+    else:
+        rows = read_rows(source)
+        basename = os.path.splitext(source)[0]
+
     out_converted = basename + '_converted.csv'
     out_distribution = basename + "_distribution.csv"
     if len(rows) > 1:
