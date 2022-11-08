@@ -1,7 +1,6 @@
 #
 #  el cheapo Jira interface module custom for PxC
 #
-import sys
 
 from jira import JIRA
 from datetime import datetime, timedelta
@@ -31,7 +30,12 @@ def format_data_date(date):
     return datetime.strftime(date, '%d.%m.%y %H:%M')
 
 
-def jql_query(project, end_date):
+def format_status_date(datestring):
+    # example date from Jira: 2021-01-04T11:13:36.000+0100
+    return format_data_date(datetime.fromisoformat(datestring[0:19]))
+
+
+def jql_resolved(project, end_date):
     # The actual excluded end date for the query is the next date 00:00, otherwise Jira would not find anything
     # from the specified end day.
     actual_end = end_date + timedelta(days=1)
@@ -47,9 +51,10 @@ def jql_query(project, end_date):
 def get_issues(session, project, end_date):
     result = []
     start = 0
-    query = jql_query(project, end_date)
+    query = jql_resolved(project, end_date)
     while True:
-        issues = session.search_issues(query, fields=[POINTS, 'issuetype', 'resolutiondate'], startAt=start)
+        issues = session.search_issues(query, fields=[POINTS, 'issuetype', 'resolutiondate'], expand='changelog',
+                                       startAt=start)
         # print(issues)
         if len(issues) == 0:
             break
@@ -59,11 +64,6 @@ def get_issues(session, project, end_date):
     return result
 
 
-def format_resolution(res):
-    # example res date from Jira: 2021-01-04T11:13:36.000+0100
-    return format_data_date(datetime.fromisoformat(res[0:19]))
-
-
 # transform the issues to rows as if read from a CSV Jira export
 # well, the CSV came first, so that's our common denominator
 def issues_to_rows(issues):
@@ -71,7 +71,8 @@ def issues_to_rows(issues):
     for i in issues:
         rows.append(
             [i.key, i.id, i.fields.issuetype.name, int(i.fields.customfield_10106 or 0),
-             format_resolution(i.fields.resolutiondate)])
+             format_status_date(i.fields.resolutiondate),
+             format_status_date(i.board_enter_date)])
     return rows
 
 
@@ -79,7 +80,32 @@ def issues_to_rows(issues):
 def get_project_issues(project, user, pwd, end_date):
     session = get_session((user, pwd))
     issues = get_issues(session, project, end_date)
+    for issue in issues:
+        issue.board_enter_date = find_board_enter_date(issue)
     return issues_to_rows(issues)
+
+
+# dig into the history and find each statuschange with the status as key and the date string as value
+def get_issue_statuschanges(issue):
+    changes = {}
+    for history in issue.changelog.histories:
+        for item in history.items:
+            if item.field == 'status':
+                changes[item.toString.lower()] = history.created
+    return changes
+
+
+# Find the date when the issue entered the Kanban board.
+# The status changes are very inconsistent in the history. Not all seem to be registered. The workflow is practically
+# always incompletely represented.
+# We start with the earliest from the various Scrum workflows.
+def find_board_enter_date(issue):
+    changes = get_issue_statuschanges(issue)
+    if 'initiation' in changes:
+        return changes['initiation']
+    if 'refinement' in changes:
+        return changes['refinement']
+    return None
 
 
 if __name__ == '__main__':

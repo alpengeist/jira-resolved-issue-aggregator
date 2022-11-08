@@ -25,12 +25,12 @@ from pathlib import Path
 
 from pxc_jira import PROJECTS, JIRA_URL, get_project_issues
 
-
 USAGE = '<csv-file>|product|explore|<Jira project name> [<jira-user> <jira-pwd> [<end-date yyyy-mm-dd>]]'
 RESOLVED_COL = 'date'
 ISSUETYPE_COL = 'type'
 POINTS_COL = 'points'
-KEY_COL = "key"
+KEY_COL = 'key'
+BOARD_COL = 'bdate'
 POINTS_THRESHOLD = 5
 MOVING_AVG_INTERVAL = 28
 
@@ -52,7 +52,8 @@ def find_column(row, text):
 # This is a safety measure against any column order change or name change in the Jira report
 def column_configuration(row):
     return {RESOLVED_COL: find_column(row, 'Resolved'), ISSUETYPE_COL: find_column(row, 'Issue Type'),
-            POINTS_COL: find_column(row, 'Custom field (Story Points)'), KEY_COL: find_column(row, 'Issue key')}
+            POINTS_COL: find_column(row, 'Custom field (Story Points)'), KEY_COL: find_column(row, 'Issue key'),
+            BOARD_COL: find_column(row, 'board enter date')}
 
 
 # The time is rounded down to 0:0:0, we are only interested in the day.
@@ -242,7 +243,8 @@ def jira_online(project):
         end_date = datetime.strptime(sys.argv[4], '%Y-%m-%d')
     print('getting issues for project "{}" with end date {} for user {}'.format(project, end_date, arg_user))
     print('ignore the warnings that come from the disabled certificate validation')
-    return [['Issue key', 'Issue id', 'Issue Type', 'Custom field (Story Points)', 'Resolved']] + get_project_issues(project, arg_user, arg_pwd, end_date)
+    return [['Issue key', 'Issue id', 'Issue Type', 'Custom field (Story Points)', 'Resolved',
+             'board enter date']] + get_project_issues(project, arg_user, arg_pwd, end_date)
 
 
 def run_calculations():
