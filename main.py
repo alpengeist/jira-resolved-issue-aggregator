@@ -77,36 +77,46 @@ def day_key(d):
     return d.strftime('%d.%m.%Y')
 
 
-def get_statechange_date(row, config):
+# date of resolution
+def get_resolved_date(row, config):
     return round_down_time(datetime.strptime(row[config[RESOLVED_COL]], '%d.%m.%y %H:%M'))
+
+
+# date when issue entered the Kanban board
+def get_board_enter_date(row, config):
+    return round_down_time(datetime.strptime(row[config[BOARD_COL]], '%d.%m.%y %H:%M'))
 
 
 # get the date of the first data row; row 0 is the heading
 def get_start_date(rows, config):
     if len(rows) > 1:
-        return get_statechange_date(rows[1], config)
+        return get_resolved_date(rows[1], config)
 
 
 # get the date from the last data row
 def get_end_date(rows, config):
     if (len(rows)) > 1:
-        return get_statechange_date(rows[-1], config)
+        return get_resolved_date(rows[-1], config)
 
 
 # an empty structure for a single report_value entry
 def new_day_values():
-    return {'bug': {'count': 0, 'points': 0.0},
-            'story': {'count': 0, 'points': 0.0},
-            'task': {'count': 0, 'points': 0.0}}
+    return {'bug': {'count': 0, 'points': 0.0, 'boarddays': []},
+            'story': {'count': 0, 'points': 0.0, 'boarddays': []},
+            'task': {'count': 0, 'points': 0.0, 'boarddays': []}}
 
 
 # process a single row and update report_values for the matching date
 # report_values are the aggregated counters for each day that has resolved issues
 def process_row(row, report_values, config):
     issue_type = get_issue_type(row, config)
-    key = day_key(get_statechange_date(row, config))
+    res_date = get_resolved_date(row, config)
+    board_date = get_board_enter_date(row, config)
+    key = day_key(res_date)
+    board_time = res_date - board_date
     values = report_values.setdefault(key, new_day_values())
     values[issue_type]['count'] += 1
+    values[issue_type]['boarddays'].append({ 'issue_key': get_issue_key(row, config), 'boarddays': board_time.days + 1})
     p = get_points(row, config)
     if p != '':
         values[issue_type]['points'] += float(p)
@@ -127,7 +137,7 @@ def find_big_points(rows, config):
         row = rows[i]
         p = get_points(row, config)
         if p > POINTS_THRESHOLD:
-            biggies.append({'date': day_key(get_statechange_date(row, config)),
+            biggies.append({'date': day_key(get_resolved_date(row, config)),
                             'type': get_issue_type(row, config),
                             'points': p,
                             'URL': get_issue_key(row, config)})
@@ -181,7 +191,7 @@ def generate_rows(report_values, start_date, end_date):
                 # window has still insufficient rows
                 avg.append(0)
         rowcount += 1
-        yield d + avg + calculate_pairwise_relations(avg)
+        yield d + avg + calculate_pairwise_relations(avg)  # three sequences appended to form the row values
 
 
 def new_dist_values(key):
@@ -201,6 +211,15 @@ def generate_distribution(report_values):
                 dist.setdefault(p, [0, 0, 0])
                 dist[p][i] += 1
     return dist
+
+
+def generate_boarddays(report_values, issue_type):
+    result = []  # a list of: [date, boarddays] for each issue
+    for v in report_values:
+        bdays = report_values[v][issue_type]['boarddays']
+        for bd in bdays:
+            result.append([v, bd['boarddays'], bd['issue_key']])
+    return result
 
 
 def serialize_distribution(dist):
@@ -273,9 +292,23 @@ def run_calculations():
         out_biggies = basename + "_biggies.csv"
         biggies = find_big_points(rows, config)
         write_biggies(biggies, out_biggies)
+
+        write_boarddays(report_values, 'bug', basename)
+        write_boarddays(report_values, 'task', basename)
+        write_boarddays(report_values, 'story', basename)
+
     else:
         print('Input file has no data, exiting')
         exit(0)
+
+
+def write_boarddays(report_values, issue_type, basename):
+    filename = basename + '_boarddays_' + issue_type + '.csv'
+    with open(filename, "w", newline='') as outfile:
+        print('writing ' + filename)
+        wr = csv.writer(outfile)
+        for r in generate_boarddays(report_values, issue_type):
+            wr.writerow(r)
 
 
 def write_converted(report_values, rows, config, out_converted):

@@ -101,11 +101,10 @@ def get_issue_statuschanges(issue):
 # We start with the earliest from the various Scrum workflows.
 def find_board_enter_date(issue):
     changes = get_issue_statuschanges(issue)
-    if 'initiation' in changes:
-        return changes['initiation']
-    if 'refinement' in changes:
-        return changes['refinement']
-    return None
+    for c in ['initiation', 'refinement', 'in progress', 'review', 'approved', 'done', 'operation']:
+        if c in changes:
+            return changes[c]
+    raise 'incomplete history in issue ' + issue.key  # this should not happen, as all issues are done or operation
 
 
 if __name__ == '__main__':
