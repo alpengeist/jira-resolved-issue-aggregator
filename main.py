@@ -101,29 +101,39 @@ def get_end_date(rows, config):
 
 # an empty structure for a single report_value entry
 def new_day_values():
-    return {'bug': {'count': 0, 'points': 0.0, 'boarddays': []},
-            'story': {'count': 0, 'points': 0.0, 'boarddays': []},
-            'task': {'count': 0, 'points': 0.0, 'boarddays': []}}
+    empty_dict = {'count': 0, 'points': 0.0, 'board_days': [], 'days_per_point': []}
+    return {'bug': empty_dict.copy(),
+            'story': empty_dict.copy(),
+            'task': empty_dict.copy()}
 
 
 # process a single row and update report_values for the matching date
-# report_values are the aggregated counters for each day that has resolved issues
+# report_values are the aggregated values for each day that has resolved issues
 def process_row(row, report_values, config):
     issue_type = get_issue_type(row, config)
     res_date = get_resolved_date(row, config)
-    board_date = get_board_enter_date(row, config)
     key = day_key(res_date)
-    board_time = res_date - board_date
+
     values = report_values.setdefault(key, new_day_values())
     values[issue_type]['count'] += 1
-    values[issue_type]['boarddays'].append({ 'issue_key': get_issue_key(row, config), 'boarddays': board_time.days + 1})
+
+    board_date = get_board_enter_date(row, config)
+    board_time = res_date - board_date
+
+    # board_days is a list of issues with their days spent on the Kanban board
+    values[issue_type]['board_days'].append({'issue_key': get_issue_key(row, config), 'days': board_time.days + 1})
+
     p = get_points(row, config)
-    if p != '':
+    if p != '' and p != 0:
         values[issue_type]['points'] += float(p)
+        values[issue_type]['days_per_point'].append({'issue_key': get_issue_key(row, config),
+                                                     'days': board_time.days + 1,
+                                                     'points': p,
+                                                     'dpt': round((board_time.days + 1) / p, 1)})
 
 
 # create a dict with key = day ISO, value = counters and points of the day
-def process_rows(rows, config):
+def calc_report_values(rows, config):
     report_values = {}
     for i in range(1, len(rows)):
         process_row(rows[i], report_values, config)
@@ -213,12 +223,39 @@ def generate_distribution(report_values):
     return dist
 
 
-def generate_boarddays(report_values, issue_type):
-    result = []  # a list of: [date, boarddays] for each issue
+# The story days distribution separates by points. For each point value it produces (board_days, count) value pairs.
+# This can be used to plot the board days on the x-axis and the counter on the y-axis.
+# Only stories are considered as they have always been estimated with points. Bugs and Tasks have not.
+def generate_days_distribution(report_values):
+    result = {}  # key = point value, value = dict of k=board_days, v=count
     for v in report_values:
-        bdays = report_values[v][issue_type]['boarddays']
+        for issue_type in ['story', 'task']:
+            issue = report_values[v][issue_type]
+            p = issue['points']
+            if p > 0:
+                # count the occurrence of each board day for the current point
+                for d in issue['board_days']:
+                    result.setdefault(p, {})
+                    result[p].setdefault(d['days'], 0)
+                    result[p][d['days']] += 1
+    return result
+
+
+def generate_board_days(report_values, issue_type):
+    result = []  # a list of [date, days, issue_key] for each issue
+    for v in report_values:
+        bdays = report_values[v][issue_type]['board_days']
         for bd in bdays:
-            result.append([v, bd['boarddays'], bd['issue_key']])
+            result.append([v, bd['days'], bd['issue_key']])
+    return result
+
+
+def generate_days_per_point(report_values, issue_type):
+    result = []  # a list of: [date, days per point, issue_key] for each issue
+    for v in report_values:
+        bdays = report_values[v][issue_type]['days_per_point']
+        for bd in bdays:
+            result.append([v, bd['dpt'],  bd['points'], bd['days'], bd['issue_key']])
     return result
 
 
@@ -281,39 +318,55 @@ def run_calculations():
         config = column_configuration(rows[0])
         print('detected columns: ', config)
 
-        out_converted = basename + '_converted.csv'
-        report_values = process_rows(rows, config)
-        write_converted(report_values, rows, config, out_converted)
+        out_stats = basename + '_statistics.csv'
+        report_values = calc_report_values(rows, config)
+        write_statistics(report_values, rows, config, out_stats)
 
-        out_distribution = basename + "_distribution.csv"
+        out_sd_distribution = basename + '_days_distribution.csv'
+        sd_dist = generate_days_distribution(report_values)
+        write_sd_distribution(sd_dist, out_sd_distribution)
+
+        out_distribution = basename + '_distribution.csv'
         dist = generate_distribution(report_values)
         write_distribution(dist, out_distribution)
 
-        out_biggies = basename + "_biggies.csv"
+        out_biggies = basename + '_biggies.csv'
         biggies = find_big_points(rows, config)
         write_biggies(biggies, out_biggies)
 
-        write_boarddays(report_values, 'bug', basename)
-        write_boarddays(report_values, 'task', basename)
-        write_boarddays(report_values, 'story', basename)
+        write_board_days(report_values, 'bug', basename)
+        write_board_days(report_values, 'task', basename)
+        write_board_days(report_values, 'story', basename)
+        write_days_per_point(report_values, 'bug', basename)
+        write_days_per_point(report_values, 'task', basename)
+        write_days_per_point(report_values, 'story', basename)
 
     else:
         print('Input file has no data, exiting')
         exit(0)
 
 
-def write_boarddays(report_values, issue_type, basename):
+def write_board_days(report_values, issue_type, basename):
     filename = basename + '_boarddays_' + issue_type + '.csv'
     with open(filename, "w", newline='') as outfile:
         print('writing ' + filename)
         wr = csv.writer(outfile)
-        for r in generate_boarddays(report_values, issue_type):
+        for r in generate_board_days(report_values, issue_type):
             wr.writerow(r)
 
 
-def write_converted(report_values, rows, config, out_converted):
-    with open(out_converted, "w", newline='') as outfile:
-        print('writing ' + out_converted)
+def write_days_per_point(report_values, issue_type, basename):
+    filename = basename + '_days_per_point_' + issue_type + '.csv'
+    with open(filename, "w", newline='') as outfile:
+        print('writing ' + filename)
+        wr = csv.writer(outfile)
+        for r in generate_days_per_point(report_values, issue_type):
+            wr.writerow(r)
+
+
+def write_statistics(report_values, rows, config, out_stats):
+    with open(out_stats, "w", newline='') as outfile:
+        print('writing ' + out_stats)
         wr = csv.writer(outfile)
         wr.writerow(csv_headline_conv())
         for d in generate_rows(report_values, get_start_date(rows, config), get_end_date(rows, config)):
@@ -338,6 +391,15 @@ def write_distribution(dist, out_distribution):
         for d in serialize_distribution(dist):
             # print(d)
             wr.writerow(d)
+
+
+def write_sd_distribution(dist, out_distribution):
+    print('writing' + out_distribution)
+    with open(out_distribution, 'w') as outfile:
+        for p in sorted(dist):
+            outfile.write('\n{} points\n'.format(p))
+            for day, count in dist[p].items():
+                outfile.write('{},{}\n'.format(day, count))
 
 
 if __name__ == '__main__':
