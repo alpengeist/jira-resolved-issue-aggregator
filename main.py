@@ -113,8 +113,8 @@ def new_day_values():
             'task': {'count': 0, 'points': 0.0, 'board_days': [], 'days_per_point': []}}
 
 
-# process a single row and update report_values for the matching date
-# report_values are the aggregated values for each day that has resolved issues
+# Process a single row and update report_values for the matching date
+# Report_values are the aggregated values for each day that has resolved issues
 def process_row(row, report_values, config):
     issue_type = get_issue_type(row, config)
     res_date = get_resolved_date(row, config)
