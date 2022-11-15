@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 # project convenience shortcuts, avoids using blanks on the commandline
 PROJECTS = {'product': '[SCS] Product', 'explore': '[SCS] Explore'}
 POINTS = 'customfield_10106'
-MAX_DAYS = 555
+MAX_DAYS = 55
 JIRA_URL = 'https://jira-web.europe.phoenixcontact.com'
 
 
@@ -66,6 +66,7 @@ def get_issues(session, project, end_date):
 
 # transform the issues to rows as if read from a CSV Jira export
 # well, the CSV came first, so that's our common denominator
+# having the values in a sequence also has other advantages when it comes to calculating relations
 def issues_to_rows(issues):
     rows = []
     for i in issues:
