@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 # project convenience shortcuts, avoids using blanks on the commandline
 PROJECTS = {'product': '[SCS] Product', 'explore': '[SCS] Explore'}
 POINTS = 'customfield_10106'
-MAX_DAYS = 55
+MAX_DAYS = 555
 JIRA_URL = 'https://jira-web.europe.phoenixcontact.com'
 
 

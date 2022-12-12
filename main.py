@@ -113,8 +113,8 @@ def new_day_values():
             'task': {'count': 0, 'points': 0.0, 'board_days': [], 'days_per_point': []}}
 
 
-# Process a single row and update report_values for the matching date
-# Report_values are the aggregated values for each day that has resolved issues
+# Process a single row and update report_values for the matching date.
+# report_values is a dict with key = date with values that are aggregated/collected/calculated for this day.
 def process_row(row, report_values, config):
     issue_type = get_issue_type(row, config)
     res_date = get_resolved_date(row, config)
@@ -337,6 +337,7 @@ def write_board_days(report_values, issue_type, basename):
     with open(filename, "w", newline='') as outfile:
         print('writing ' + filename)
         wr = csv.writer(outfile)
+        wr.writerow(['date', 'days', 'key'])
         for r in generate_board_days(report_values, issue_type):
             wr.writerow(r)
 
@@ -346,6 +347,7 @@ def write_days_per_point(report_values, issue_type, basename):
     with open(filename, "w", newline='') as outfile:
         print('writing ' + filename)
         wr = csv.writer(outfile)
+        wr.writerow(['date', 'days/point', 'points', 'days', 'key'])
         for r in generate_days_per_point(report_values, issue_type):
             wr.writerow(r)
 
